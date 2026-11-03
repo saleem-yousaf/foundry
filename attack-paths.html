@@ -1,0 +1,757 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- Same policy as the guide page. This page has no script at all, so
+     script-src stays 'self' only to match; it loads nothing. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<title>Attack paths for a Microsoft Foundry penetration test | Foundry Field Guide</title>
+<meta name="description" content="Fifteen attack paths against a Microsoft Foundry deployment, with the reasoning, test cases, pass criteria, rules of engagement and effort needed to scope a penetration test.">
+<meta name="author" content="Saleem Yousaf">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Attack paths for a Microsoft Foundry penetration test">
+<meta property="og:description" content="Fifteen attack paths with reasoning, test cases and effort, for scoping a Foundry pen test.">
+<meta name="keywords" content="Microsoft Foundry, Azure AI Foundry, AI security, AI agent security, prompt injection, threat modelling, penetration testing, guardrails, landing zone, Zero Trust">
+<link rel="canonical" href="https://saleemyousaf.co.uk/foundry/attack-paths.html">
+<meta property="og:url" content="https://saleemyousaf.co.uk/foundry/attack-paths.html">
+<meta property="og:image" content="https://saleemyousaf.co.uk/foundry/og-foundry.png">
+<meta property="og:image:width" content="2400">
+<meta property="og:image:height" content="1260">
+<meta property="og:site_name" content="Saleem Yousaf">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Attack paths for a Microsoft Foundry penetration test">
+<meta name="twitter:description" content="Fifteen attack paths against a Microsoft Foundry deployment, with the reasoning, test cases, pass criteria and effort needed to scope a penetration test.">
+<meta name="twitter:image" content="https://saleemyousaf.co.uk/foundry/og-foundry.png">
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"TechArticle","headline":"Attack paths for a Microsoft Foundry penetration test","description":"Fifteen attack paths against a Microsoft Foundry deployment, with the reasoning, test cases, pass criteria and effort needed to scope a penetration test.","image":"https://saleemyousaf.co.uk/foundry/og-foundry.png","datePublished":"2026-11-03","author":{"@type":"Person","name":"Saleem Yousaf","url":"https://saleemyousaf.co.uk","sameAs":["https://www.linkedin.com/in/saleemyousaf","https://github.com/saleem-yousaf","https://cyberspartans.co.uk"]},"publisher":{"@type":"Person","name":"Saleem Yousaf","url":"https://saleemyousaf.co.uk"},"mainEntityOfPage":{"@type":"WebPage","@id":"https://saleemyousaf.co.uk/foundry/attack-paths.html"}}
+</script>
+<meta name="theme-color" content="#0E1116">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="preload" href="fonts/ibm-plex-sans-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="index.html"><img src="favicon.svg" alt="" width="26" height="26"><span>Foundry Field Guide</span></a>
+    <nav class="nav" aria-label="Sections">
+      <a href="#use">How to use</a>
+      <a href="#roe">Rules</a>
+      <a href="#positions">Starting positions</a>
+      <a href="#summary">Summary</a>
+      <a href="#paths">Paths</a>
+      <a href="#out">Out of scope</a>
+      <a href="#inputs">Client inputs</a>
+      <a href="#effort">Effort</a>
+      <a href="index.html">Back to the guide</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+
+<div class="hero">
+  <div class="wrap">
+    <h1>Attack paths for a Microsoft Foundry penetration test</h1>
+    <p class="lead">Fifteen paths an attacker can take against a Foundry deployment, written for scoping. Each one says where the attacker starts, why the path can work, which control should stop each step, what the tester checks, and what a pass looks like.</p>
+    <p class="print-note">Print this page or save it as PDF to attach to a statement of work; the print layout starts each path on a new page.</p>
+  </div>
+</div>
+
+<section id="use">
+  <div class="wrap">
+    <h2>How to use this page</h2>
+    <p>Most Foundry risk sits in how the platform is configured and how agents are wired to tools and data, not in the model itself. A useful test therefore needs three things a normal web application test does not: accounts in several starting positions, an inventory of every place an agent reads text from, and canary data the tester can try to move without touching anything real.</p>
+    <p>To scope an engagement, pick the starting positions the client cares about, take the paths that begin from them, and adjust the effort for the number of agents and tools in scope. The summary table gives a priority for each path with the reasoning behind it. The threat IDs (E01, I04 and so on) match the threat library in the guide, so findings can be traced back to the control set.</p>
+    <p>The paths assume the reference design from the guide: Foundry and its stores behind private endpoints, local auth disabled, agents injected into a delegated subnet, APIM in front, and Prompt Shields switched on. Where a client has not built that, the early paths will find it quickly and the later ones become easier.</p>
+  </div>
+</section>
+
+<section id="roe">
+  <div class="wrap">
+    <h2>Rules of engagement that shape the scope</h2>
+    <p class="lead">Microsoft no longer needs to be told about a test of Azure resources you own, but every test is bound by the Microsoft Cloud Unified Penetration Testing Rules of Engagement. Several of those rules change how specific paths have to be run.</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th scope="col">Rule</th><th scope="col">Effect on this engagement</th><th scope="col">Paths affected</th></tr></thead>
+        <tbody>
+          <tr><td>Third parties need explicit written authorisation from the resource owner</td><td>The statement of work names the subscriptions, Foundry resources, projects and agents in scope. Microsoft does not authorise on the client's behalf.</td><td>All</td></tr>
+          <tr><td>Denial of service testing of any kind is prohibited, including tests that simulate it</td><td>Spend and rate limits are tested by lowering a limit in a test APIM product and sending a short, small burst. Nothing tries to exhaust deployment capacity.</td><td>AP08</td></tr>
+          <tr><td>No network intensive fuzzing or automated testing that generates excessive traffic</td><td>Automated jailbreak and injection corpora run at a modest, agreed rate.</td><td>AP03, AP04</td></tr>
+          <tr><td>Only credentials and secrets you own may be used</td><td>Leaked credential testing uses credentials the client plants and owns. Anything else the tester finds is reported, never used.</td><td>AP02</td></tr>
+          <tr><td>Attempts to break out of AI system boundaries and shared service containers are encouraged, with responsible disclosure and immediate stop on success</td><td>Sandbox and runtime boundary tests are allowed, but the moment the tester reaches Microsoft's platform they stop and report to MSRC. No post exploit action against Microsoft assets.</td><td>AP09, AP10</td></tr>
+          <tr><td>Testing tenants, data or storage you do not own is prohibited</td><td>Name guessing in AP01 stops at any name that resolves but is not in the client's inventory, because it may belong to another customer.</td><td>AP01</td></tr>
+          <tr><td>Microsoft may interrupt activity flagged by its abuse detection</td><td>Keep the authorisation letter to hand. Harmful content prompts in AP03 may trip abuse monitoring on the client's subscription; the client should know in advance.</td><td>AP03</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="small muted">Source: <a href="https://learn.microsoft.com/en-us/azure/security/fundamentals/pen-testing">Microsoft Learn, Penetration testing</a>, and the <a href="https://www.microsoft.com/msrc/pentest-rules-of-engagement">Microsoft Cloud Unified Penetration Testing Rules of Engagement</a>, which is the authoritative text.</p>
+  </div>
+</section>
+
+<section id="positions">
+  <div class="wrap">
+    <h2>Starting positions</h2>
+    <p class="lead">Each path starts from one of six positions. The client provides the access for each position the scope includes; most of the work in an AI test is from the inside, so an internet only test misses the paths that matter most.</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th scope="col">Position</th><th scope="col">Who this represents</th><th scope="col">What the client provides</th></tr></thead>
+        <tbody>
+          <tr><td class="id">P1</td><td>Anyone on the internet, with no account</td><td>The list of public DNS names in scope; any test credentials to plant</td></tr>
+          <tr><td class="id">P2</td><td>An ordinary signed in user of an agent or app</td><td>Two user accounts in different groups, so cross user access can be tested</td></tr>
+          <tr><td class="id">P3</td><td>Someone who can write text an agent will later read: a supplier uploading documents, an emailer to a shared mailbox, an editor of a SharePoint site or wiki</td><td>Write access to each grounding source in scope, and an agreed canary payload set</td></tr>
+          <tr><td class="id">P4</td><td>A developer, or an attacker holding a developer's session</td><td>An account with Foundry User on a development project, as real developers get</td></tr>
+          <tr><td class="id">P5</td><td>Someone with write access to the infrastructure repository or a pipeline</td><td>A sandbox copy of the repository and pipeline, or contributor access to the real one with a rollback plan</td></tr>
+          <tr><td class="id">P6</td><td>A foothold on the network: a VM in another spoke, an on premises host, or a workload in AWS or GCP</td><td>A test host in each network location in scope, with an ordinary user identity</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section id="summary">
+  <div class="wrap">
+    <h2>Summary of paths</h2>
+    <p class="lead">Priority combines how likely the path is in practice with what it costs if it works. The reasoning column says why, so a client can move a path up or down for their own estate.</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th scope="col">ID</th><th scope="col">Path</th><th scope="col">Start</th><th scope="col">Priority</th><th scope="col">Why that priority</th><th scope="col">Days</th></tr></thead>
+        <tbody>
+          <tr><td class="id">AP01</td><td><a href="#ap01">Exposure sweep from the internet</a></td><td>P1</td><td>High</td><td>Cheap to run and finds the most common gap: a connected store left public while Foundry is private</td><td>1</td></tr>
+          <tr><td class="id">AP02</td><td><a href="#ap02">Planted credentials to model and data access</a></td><td>P1</td><td>High</td><td>Leaked secrets are the most common real world route to running someone else's models</td><td>1</td></tr>
+          <tr><td class="id">AP03</td><td><a href="#ap03">Jailbreak and system prompt extraction</a></td><td>P2</td><td>Medium</td><td>Very likely to partly succeed, but impact depends on what the prompt holds and what tools exist</td><td>2</td></tr>
+          <tr><td class="id">AP04</td><td><a href="#ap04">Indirect prompt injection into tool use</a></td><td>P3</td><td>Critical</td><td>The attacker never signs in, the victim is an innocent user, and the damage is whatever the agent's tools can do</td><td>3</td></tr>
+          <tr><td class="id">AP05</td><td><a href="#ap05">Data leak through rendered output</a></td><td>P3</td><td>High</td><td>Server side controls never see the leak; only the client can stop it</td><td>1</td></tr>
+          <tr><td class="id">AP06</td><td><a href="#ap06">Cross user access through retrieval and threads</a></td><td>P2</td><td>Critical</td><td>Retrieval trimming is application logic and is often missing on one tool or one index</td><td>2</td></tr>
+          <tr><td class="id">AP07</td><td><a href="#ap07">Confused deputy through the agent identity</a></td><td>P2</td><td>High</td><td>Agents are commonly given the union of every user's rights</td><td>1.5</td></tr>
+          <tr><td class="id">AP08</td><td><a href="#ap08">Write actions without approval, loops and spend limits</a></td><td>P2, P3</td><td>High</td><td>Approval is configured per tool and usually missed on the tool that matters</td><td>1.5</td></tr>
+          <tr><td class="id">AP09</td><td><a href="#ap09">Tool supply chain and request forgery from the agent subnet</a></td><td>P3, P4</td><td>High</td><td>The agent runtime sits inside the client network, so any URL fetching tool becomes an internal request</td><td>2</td></tr>
+          <tr><td class="id">AP10</td><td><a href="#ap10">Egress bypass through allowed destinations</a></td><td>P3, P4</td><td>High</td><td>Wildcard cloud FQDNs in firewall rules let data reach an attacker's own Azure resources</td><td>1</td></tr>
+          <tr><td class="id">AP11</td><td><a href="#ap11">Developer privilege escalation and guardrail tampering</a></td><td>P4</td><td>High</td><td>Convenience role grants are common, and one change can disable every guardrail at once</td><td>2</td></tr>
+          <tr><td class="id">AP12</td><td><a href="#ap12">Unapproved training and model deployment</a></td><td>P4</td><td>Medium</td><td>Default roles allow fine tuning; impact is regulatory rather than immediate</td><td>1</td></tr>
+          <tr><td class="id">AP13</td><td><a href="#ap13">Pipeline identity abuse</a></td><td>P5</td><td>High</td><td>Pipelines hold the highest standing rights and federation subjects are often too broad</td><td>1.5</td></tr>
+          <tr><td class="id">AP14</td><td><a href="#ap14">Network foothold to private endpoints</a></td><td>P6</td><td>Medium</td><td>Private endpoints are reachable from more places than their owners think, but Entra ID still applies</td><td>1.5</td></tr>
+          <tr><td class="id">AP15</td><td><a href="#ap15">Detection and response validation</a></td><td>All</td><td>High</td><td>A control that blocks silently looks the same as one that never ran</td><td>2</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section id="paths">
+  <div class="wrap">
+    <h2>The attack paths</h2>
+    <ul class="toc">
+      <li><a href="#ap01"><span class="id">AP01</span>Exposure sweep from the internet</a></li>
+      <li><a href="#ap02"><span class="id">AP02</span>Planted credentials</a></li>
+      <li><a href="#ap03"><span class="id">AP03</span>Jailbreak and prompt extraction</a></li>
+      <li><a href="#ap04"><span class="id">AP04</span>Indirect prompt injection</a></li>
+      <li><a href="#ap05"><span class="id">AP05</span>Leak through rendered output</a></li>
+      <li><a href="#ap06"><span class="id">AP06</span>Cross user access</a></li>
+      <li><a href="#ap07"><span class="id">AP07</span>Confused deputy</a></li>
+      <li><a href="#ap08"><span class="id">AP08</span>Unapproved writes and loops</a></li>
+      <li><a href="#ap09"><span class="id">AP09</span>Tool supply chain and request forgery</a></li>
+      <li><a href="#ap10"><span class="id">AP10</span>Egress bypass</a></li>
+      <li><a href="#ap11"><span class="id">AP11</span>Developer escalation</a></li>
+      <li><a href="#ap12"><span class="id">AP12</span>Unapproved training</a></li>
+      <li><a href="#ap13"><span class="id">AP13</span>Pipeline identity abuse</a></li>
+      <li><a href="#ap14"><span class="id">AP14</span>Network foothold</a></li>
+      <li><a href="#ap15"><span class="id">AP15</span>Detection and response</a></li>
+    </ul>
+  </div>
+</section>
+
+<div class="wrap">
+
+<article class="ap" id="ap01">
+  <h2><span class="id">AP01</span> Exposure sweep from the internet</h2>
+  <dl class="facts-row">
+    <div><dt>Start</dt><dd>P1, no account</dd></div>
+    <div><dt>Target</dt><dd>Foundry and every connected resource</dd></div>
+    <div><dt>Priority</dt><dd>High</dd></div>
+    <div><dt>Estimate</dt><dd>1 day</dd></div>
+  </dl>
+  <p><strong>Goal.</strong> Find any Foundry, AI Search, Storage, Cosmos DB, Key Vault, Container Registry or APIM endpoint that answers from the internet, or that accepts a key.</p>
+  <div class="reason">
+    <h3>Why this can work</h3>
+    <p>Foundry's connected resources are separate Azure resources with their own network settings. Teams lock down the Foundry account because it is the thing called "AI", then leave the AI Search index or the storage account public because someone needed portal access during the build. The data the agent reads lives in those stores, so the private Foundry endpoint protects very little on its own.</p>
+    <p>Names are also predictable. Entra ID authentication and private link both need a custom subdomain on the Foundry account, and organisations name resources by a convention, so an attacker who knows one name can guess the rest. Public DNS for a resource with a private endpoint still returns a <code>privatelink</code> CNAME, which confirms the resource exists without saying whether public access is off. The only way to know is to send a request.</p>
+  </div>
+  <h3>Chain</h3>
+  <div class="table-wrap">
+    <table class="chain">
+      <thead><tr><th scope="col">Step</th><th scope="col">Attacker action</th><th scope="col">Control expected to stop it</th><th scope="col">Tester records</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>Build candidate names from the naming convention and resolve them under <code>services.ai.azure.com</code>, <code>openai.azure.com</code>, <code>cognitiveservices.azure.com</code>, <code>search.windows.net</code>, <code>blob.core.windows.net</code>, <code>documents.azure.com</code>, <code>vault.azure.net</code>, <code>azurecr.io</code>, <code>azure-api.net</code></td><td>None. Existence is expected to be discoverable</td><td>Every name that resolves, its CNAME chain, and whether it is on the client inventory</td></tr>
+        <tr><td>2</td><td>Send an unauthenticated request to each endpoint</td><td>Public network access disabled, returning a network deny rather than an authentication error</td><td>Status code and message per endpoint; a 401 means the endpoint is reachable and only authentication stands in the way</td></tr>
+        <tr><td>3</td><td>Send a request with a planted key or SAS token from AP02</td><td>Local auth disabled on Foundry, AI Search and Cosmos DB; shared key access off on Storage</td><td>Whether any key is accepted</td></tr>
+        <tr><td>4</td><td>List anonymous blob containers and check for a static website endpoint</td><td>Blob public access disabled at the account</td><td>Any readable container</td></tr>
+        <tr><td>5</td><td>Check APIM for an external gateway, a public developer portal, or a Front Door route</td><td>APIM in internal mode; any internet route behind WAF and approved</td><td>Each internet reachable API and what it fronts</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="pass">
+    <h3>Pass looks like</h3>
+    <p>Every in scope endpoint refuses the request at the network layer, no key is accepted anywhere, and no container is readable anonymously. Anything that returns 401 rather than a network deny is a finding even if authentication held, because the design intent was no internet path at all.</p>
+  </div>
+  <div class="roe"><p><strong>Rules of engagement.</strong> Only probe names on the client's inventory. If a guessed name resolves but is not on the inventory, stop: it may belong to another customer, and testing it is prohibited.</p></div>
+  <h3>Maps to</h3>
+  <div class="map"><span class="tag">E10</span><span class="tag">E14</span><span class="tag">I11</span><span class="tag">ATT&amp;CK T1526</span><span class="tag">ATT&amp;CK T1580</span><span class="tag">ATT&amp;CK T1190</span></div>
+</article>
+
+<article class="ap" id="ap02">
+  <h2><span class="id">AP02</span> Planted credentials to model and data access</h2>
+  <dl class="facts-row">
+    <div><dt>Start</dt><dd>P1, holding a leaked secret</dd></div>
+    <div><dt>Target</dt><dd>Model deployments, stores, service principals</dd></div>
+    <div><dt>Priority</dt><dd>High</dd></div>
+    <div><dt>Estimate</dt><dd>1 day</dd></div>
+  </dl>
+  <p><strong>Goal.</strong> Show whether a secret that escapes into a repository, notebook, ticket or pipeline log gives anyone access to models or data, and whether anyone notices.</p>
+  <div class="reason">
+    <h3>Why this can work</h3>
+    <p>Running someone else's models with a stolen key is the most common real world abuse of AI services, because it needs no exploit at all. A Foundry account with local auth disabled has no keys to steal, but the estate still holds other secret material: storage SAS tokens in data science notebooks, AI Search admin keys if local auth was left on, client secrets for service principals that hold Foundry User, and connection secrets held by older hub based workspaces.</p>
+    <p>A client secret is the dangerous one. It works from anywhere on the internet unless Conditional Access for workload identities restricts where it can sign in from, which needs Workload ID licensing and is often not configured. The private endpoint then becomes the last control: the attacker can get a valid token but has no network path to use it.</p>
+  </div>
+  <h3>Chain</h3>
+  <div class="table-wrap">
+    <table class="chain">
+      <thead><tr><th scope="col">Step</th><th scope="col">Attacker action</th><th scope="col">Control expected to stop it</th><th scope="col">Tester records</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>Search repositories, wikis, pipeline logs and notebooks the tester was given read access to</td><td>Secret scanning with push protection</td><td>Every secret found, where, how old, and whether scanning flagged it</td></tr>
+        <tr><td>2</td><td>Call the model endpoint with a planted key</td><td>Local auth disabled</td><td>Response</td></tr>
+        <tr><td>3</td><td>Request a token from the internet with a planted service principal secret</td><td>Conditional Access for workload identities limiting sign in location; short secret lifetime</td><td>Whether a token is issued, and the sign in log entry</td></tr>
+        <tr><td>4</td><td>Use any token obtained against the Foundry and store endpoints from the internet</td><td>Public network access disabled</td><td>Response per endpoint</td></tr>
+        <tr><td>5</td><td>Use a planted SAS token against storage</td><td>Shared key access off, which also invalidates account SAS</td><td>Response</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="pass">
+    <h3>Pass looks like</h3>
+    <p>No planted secret gives data or model access from the internet, and each planted secret raised an alert (secret scanning, Entra ID risky workload identity, or Defender) within the agreed time. A token issued at step 3 is a finding even if step 4 failed, because the network was the only remaining control.</p>
+  </div>
+  <div class="roe"><p><strong>Rules of engagement.</strong> Use only credentials the client created for the test. Any real secret found is recorded and reported straight away for rotation, and not used unless the statement of work explicitly authorises it. Credentials that belong to anyone other than the client are never used.</p></div>
+  <h3>Maps to</h3>
+  <div class="map"><span class="tag">E04</span><span class="tag">I11</span><span class="tag">LLM10</span><span class="tag">AML.T0034</span><span class="tag">ATT&amp;CK T1552.001</span><span class="tag">ATT&amp;CK T1078.004</span><span class="tag">ATT&amp;CK T1496</span></div>
+</article>
+
+<article class="ap" id="ap03">
+  <h2><span class="id">AP03</span> Jailbreak, policy evasion and system prompt extraction</h2>
+  <dl class="facts-row">
+    <div><dt>Start</dt><dd>P2, signed in user</dd></div>
+    <div><dt>Target</dt><dd>Content guardrails, system prompt</dd></div>
+    <div><dt>Priority</dt><dd>Medium</dd></div>
+    <div><dt>Estimate</dt><dd>2 days</dd></div>
+  </dl>
+  <p><strong>Goal.</strong> Make the assistant produce output outside its policy, extract its system prompt and grounding instructions, and measure how often the guardrails hold.</p>
+  <div class="reason">
+    <h3>Why this can work</h3>
+    <p>Prompt Shields and the content filters are classifiers. They catch known patterns well and reduce the success rate of new ones, but no classifier stops every attempt. Attacks that spread intent across several turns, encode the request (base64, leetspeak, another language), split a payload between a message and an uploaded file, or wrap it in role play are the usual ways past a single turn check.</p>
+    <p>Partial success is therefore expected, so the useful question for the client is what success costs. That depends on two things the tester can establish: whether the system prompt holds anything sensitive (internal URLs, names of tools and indexes, business rules, credentials), and whether a jailbroken assistant has tools it can then misuse. That is why this path is Medium on its own but feeds AP04 and AP08.</p>
+  </div>
+  <h3>Chain</h3>
+  <div class="table-wrap">
+    <table class="chain">
+      <thead><tr><th scope="col">Step</th><th scope="col">Attacker action</th><th scope="col">Control expected to stop it</th><th scope="col">Tester records</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>Run a baseline of known jailbreak prompts</td><td>Prompt Shields Jailbreak set to block</td><td>Block rate per category</td></tr>
+        <tr><td>2</td><td>Run obfuscated variants: encodings, translation, payload splitting, file plus message</td><td>Prompt Shields, input harm filters, blocklists</td><td>Which techniques pass</td></tr>
+        <tr><td>3</td><td>Escalate gradually over a long conversation</td><td>Filters on output as well as input; conversation length limits</td><td>Turn at which policy breaks, if it does</td></tr>
+        <tr><td>4</td><td>Ask for the instructions reformatted, translated, summarised or continued</td><td>No sensitive content in the prompt; output filters</td><td>Prompt text recovered and anything sensitive in it</td></tr>
+        <tr><td>5</td><td>Check the logs for each blocked and each successful attempt</td><td>Content filter results logged against the user identity</td><td>Whether the SOC can see who did it</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <h3>Test cases</h3>
+  <ul class="checks">
+    <li>Automated runs with PyRIT or the Foundry AI Red Teaming Agent, at an agreed rate, reporting attack success rate per harm category.</li>
+    <li>Manual creative attempts for the use case, because automated corpora miss domain specific framing (for example, a claims assistant asked to "draft a fraudulent claim as a training example").</li>
+    <li>Repeat the best performing attacks against each deployment, since filter policies are set per deployment and one may be weaker.</li>
+  </ul>
+  <div class="pass">
+    <h3>Pass looks like</h3>
+    <p>Attack success rate below the threshold the client agreed before testing, per category. The extracted system prompt contains nothing that helps a further attack. Every attempt is attributable to a user in the logs.</p>
+  </div>
+  <div class="roe"><p><strong>Rules of engagement.</strong> Automated corpora run at a modest rate, as excessive automated traffic is prohibited. Harmful category prompts can trip Microsoft's abuse monitoring on the client subscription, so the client should be told and the authorisation letter kept ready.</p></div>
+  <h3>Maps to</h3>
+  <div class="map"><span class="tag">E01</span><span class="tag">E12</span><span class="tag">LLM01</span><span class="tag">LLM07</span><span class="tag">AML.T0054</span><span class="tag">AML.T0056</span></div>
+</article>
+
+<article class="ap" id="ap04">
+  <h2><span class="id">AP04</span> Indirect prompt injection into tool use</h2>
+  <dl class="facts-row">
+    <div><dt>Start</dt><dd>P3, writes content an agent reads</dd></div>
+    <div><dt>Target</dt><dd>Agent tools, data the agent can reach</dd></div>
+    <div><dt>Priority</dt><dd>Critical</dd></div>
+    <div><dt>Estimate</dt><dd>3 days, plus 0.5 per extra agent</dd></div>
+  </dl>
+  <p><strong>Goal.</strong> Plant text in a source an agent reads, then make the agent, acting for an innocent user, call tools the user never asked for: read other records, change data, or send information out.</p>
+  <div class="reason">
+    <h3>Why this can work</h3>
+    <p>A language model has no reliable way to tell instructions from data once both are in its context. Every document, email, web page and tool response an agent reads is therefore an input channel for whoever wrote it. The attacker never signs in to Foundry, never touches the client's identity system, and the action is carried out under the agent's identity on behalf of a legitimate user, so it looks like normal use.</p>
+    <p>The defence is a stack: Prompt Shields on documents and tool responses, guardrails on tool calls, a per agent tool allow list, human approval on writes, a narrowly scoped agent identity, and egress filtering. The test establishes which of those layers exist for each agent and how many have to fail before something happens. That is the single most useful result a client can get from an AI pen test, which is why this path carries the most time.</p>
+    <p>Scoping depends on the read surfaces. Before quoting, list every agent, every grounding source and every tool response it consumes, and mark which can be written by someone outside the trust boundary: suppliers, customers, all staff, or the public web through Grounding with Bing.</p>
+  </div>
+  <h3>Chain</h3>
+  <div class="table-wrap">
+    <table class="chain">
+      <thead><tr><th scope="col">Step</th><th scope="col">Attacker action</th><th scope="col">Control expected to stop it</th><th scope="col">Tester records</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>Map read surfaces: each agent's indexes, connected sites, mailboxes, web grounding and tools, and who can write to each</td><td>Grounding only from curated sources</td><td>Writable surfaces per agent</td></tr>
+        <tr><td>2</td><td>Plant canary payloads using hiding techniques: white on white text, HTML comments, alt text, document properties, Unicode tag characters, text inside images</td><td>Ingestion scanning; Prompt Shields Indirect Attack on documents</td><td>Which techniques survive ingestion into the index</td></tr>
+        <tr><td>3</td><td>As a second, innocent user, ask the agent a normal question that retrieves the planted document</td><td>Tool response guardrail with Indirect Attack set to block</td><td>Whether the payload reached the model, read from the trace</td></tr>
+        <tr><td>4</td><td>Payload instructs a tool call outside the user's request: look up another customer, update a record, send a message</td><td>Tool allow list; human approval on writes; guardrail on tool calls</td><td>Which calls were attempted and which executed</td></tr>
+        <tr><td>5</td><td>Payload instructs the agent to place canary data in a tool parameter or URL bound for a tester owned endpoint</td><td>Agent identity scope; egress firewall</td><td>Whether the tester endpoint received anything</td></tr>
+        <tr><td>6</td><td>Leave the payload in place and ask from other accounts over the following days</td><td>Detection and removal process</td><td>Time until detected and removed; number of users affected meanwhile</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="pass">
+    <h3>Pass looks like</h3>
+    <ul>
+      <li>No tool call outside the user's intent executes without a person approving it.</li>
+      <li>No canary data reaches the tester endpoint.</li>
+      <li>The payload is flagged in the logs, and the SOC is alerted to a tool call following an Indirect Attack annotation.</li>
+      <li>The client can find and remove a planted document from every index it reached.</li>
+    </ul>
+    <p>Any single layer failing is a finding; the report states how many layers remained.</p>
+  </div>
+  <div class="roe"><p><strong>Rules of engagement.</strong> Payloads are benign and canary based: the instruction is to move a seeded canary record, never real data. Destination endpoints are owned by the tester and agreed in advance. All payloads are removed at the end and their removal confirmed in each index.</p></div>
+  <h3>Maps to</h3>
+  <div class="map"><span class="tag">E02</span><span class="tag">E09</span><span class="tag">I03</span><span class="tag">LLM01</span><span class="tag">LLM06</span><span class="tag">LLM08</span><span class="tag">AML.T0051.001</span><span class="tag">AML.T0053</span><span class="tag">ATT&amp;CK T1213</span></div>
+</article>
+
+<article class="ap" id="ap05">
+  <h2><span class="id">AP05</span> Data leak through rendered output</h2>
+  <dl class="facts-row">
+    <div><dt>Start</dt><dd>P3, or P2 with a direct prompt</dd></div>
+    <div><dt>Target</dt><dd>Chat client, link previews</dd></div>
+    <div><dt>Priority</dt><dd>High</dd></div>
+    <div><dt>Estimate</dt><dd>1 day</dd></div>
+  </dl>
+  <p><strong>Goal.</strong> Make the model write a link or image whose URL carries conversation data, so the user's browser or chat platform sends it to the attacker.</p>
+  <div class="reason">
+    <h3>Why this can work</h3>
+    <p>This leak happens after every server side control has finished. Foundry returns text; the client turns markdown into an image tag; the browser fetches the image; the query string carries the data. Nothing in Foundry, APIM or the firewall sees the browser's request, because it leaves from the user's device.</p>
+    <p>Chat platforms add a second channel. When an agent posts into Teams or Slack, link unfurling makes the platform's own servers fetch any URL in the message to build a preview, with no click from the user. The client control is therefore the only control, and it has to cover every surface the agent posts to.</p>
+  </div>
+  <h3>Chain</h3>
+  <div class="table-wrap">
+    <table class="chain">
+      <thead><tr><th scope="col">Step</th><th scope="col">Attacker action</th><th scope="col">Control expected to stop it</th><th scope="col">Tester records</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>Through an AP04 surface, instruct the model to end its answer with an image whose URL includes the user's question or a canary value</td><td>Tool response guardrail</td><td>Whether the instruction reached the model</td></tr>
+        <tr><td>2</td><td>Check whether the model wrote the link</td><td>Output filters, which are weak against this</td><td>Model output</td></tr>
+        <tr><td>3</td><td>Open the answer in each client: web app, Teams, Slack, email digest</td><td>Client renders as text or proxies images; restrictive image policy in the client's own CSP; unfurling off for agent messages</td><td>Requests received at the tester listener, with source IP showing browser or platform</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="pass"><h3>Pass looks like</h3><p>The tester listener receives nothing from any client, for images, links or previews.</p></div>
+  <h3>Maps to</h3>
+  <div class="map"><span class="tag">E03</span><span class="tag">E15</span><span class="tag">LLM02</span><span class="tag">LLM05</span><span class="tag">AML.T0057</span><span class="tag">ATT&amp;CK T1567</span></div>
+</article>
+
+<article class="ap" id="ap06">
+  <h2><span class="id">AP06</span> Cross user access through retrieval and threads</h2>
+  <dl class="facts-row">
+    <div><dt>Start</dt><dd>P2, two users in different groups</dd></div>
+    <div><dt>Target</dt><dd>AI Search indexes, threads, files</dd></div>
+    <div><dt>Priority</dt><dd>Critical where data is personal or confidential</dd></div>
+    <div><dt>Estimate</dt><dd>2 days</dd></div>
+  </dl>
+  <p><strong>Goal.</strong> As user A, read documents only user B may see, or read B's conversations and uploaded files.</p>
+  <div class="reason">
+    <h3>Why this can work</h3>
+    <p>AI Search does not know who the end user is. Security trimming works only if the application or agent adds a filter on an access control field, built from the signed in user's groups, to every query. If one tool omits the filter, if the filter is built from parameters the model chooses, or if a second index was added without access control fields, the search identity returns everything it can see, which is usually everything.</p>
+    <p>Threads and files have the same weakness at the API layer. If the client application accepts a conversation or file ID from the browser and passes it on without checking who owns it, any user can read any thread by changing an ID. The platform stores the data correctly; the application decides who sees it.</p>
+  </div>
+  <h3>Chain</h3>
+  <div class="table-wrap">
+    <table class="chain">
+      <thead><tr><th scope="col">Step</th><th scope="col">Attacker action</th><th scope="col">Control expected to stop it</th><th scope="col">Tester records</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>Client seeds canary documents with distinct access lists for A and B</td><td>Not applicable</td><td>Seed set</td></tr>
+        <tr><td>2</td><td>As A, ask questions only B's documents answer</td><td>Security trimming filter on every retrieval tool</td><td>Any B only content returned</td></tr>
+        <tr><td>3</td><td>As A, ask the agent to search "without filters", widen the scope, or use another tool or index</td><td>Filter applied in code from the token, not chosen by the model</td><td>Whether model wording changes the result</td></tr>
+        <tr><td>4</td><td>Replay A's API calls with B's conversation, thread, run and file IDs</td><td>Ownership check per request; session isolation per user</td><td>Status codes and any content returned</td></tr>
+        <tr><td>5</td><td>Upload a file as B, then reference it from A's session</td><td>File access scoped to the uploading user</td><td>Result</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="pass"><h3>Pass looks like</h3><p>No B only content reaches A by any wording, tool or ID manipulation.</p></div>
+  <h3>Maps to</h3>
+  <div class="map"><span class="tag">E12</span><span class="tag">E13</span><span class="tag">I06</span><span class="tag">LLM02</span><span class="tag">LLM08</span><span class="tag">ATT&amp;CK T1213</span><span class="tag">ATT&amp;CK T1530</span></div>
+</article>
+
+<article class="ap" id="ap07">
+  <h2><span class="id">AP07</span> Confused deputy through the agent identity</h2>
+  <dl class="facts-row">
+    <div><dt>Start</dt><dd>P2, a low privilege user</dd></div>
+    <div><dt>Target</dt><dd>Systems the agent can call</dd></div>
+    <div><dt>Priority</dt><dd>High</dd></div>
+    <div><dt>Estimate</dt><dd>1.5 days</dd></div>
+  </dl>
+  <p><strong>Goal.</strong> Get the agent to do something in a downstream system that the user could not do directly.</p>
+  <div class="reason">
+    <h3>Why this can work</h3>
+    <p>AP06 is about what an index returns. This path is about the systems behind the agent's tools: HR, ticketing, CRM, finance. When the agent calls them with its own identity, the downstream system checks the agent's rights, not the user's. To serve every user, agents are usually granted the union of every user's needs, so each user inherits everything the agent can do.</p>
+    <p>The fix is the on behalf of user flow, or an explicit authorisation check in the tool, but both are extra work and often skipped. The test needs white box access to the agent's tool definitions and role assignments to choose targets well.</p>
+  </div>
+  <h3>Chain</h3>
+  <div class="table-wrap">
+    <table class="chain">
+      <thead><tr><th scope="col">Step</th><th scope="col">Attacker action</th><th scope="col">Control expected to stop it</th><th scope="col">Tester records</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>Compare the agent identity's role assignments and API permissions with the test user's</td><td>Agent identity scoped to its charter</td><td>Rights the agent has that the user lacks</td></tr>
+        <tr><td>2</td><td>Ask the agent to act on a resource only the agent can reach: another team's ticket queue, a salary record</td><td>On behalf of user flow, or a per call authorisation check in the tool</td><td>Whether the action succeeds, and whose identity the downstream log shows</td></tr>
+        <tr><td>3</td><td>Check the downstream audit trail</td><td>Logs show both agent and user</td><td>Whether the real requester can be identified</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="pass"><h3>Pass looks like</h3><p>Every downstream action is limited to what the requesting user could do, and the audit trail names both the agent and the user.</p></div>
+  <h3>Maps to</h3>
+  <div class="map"><span class="tag">E13</span><span class="tag">I05</span><span class="tag">LLM06</span><span class="tag">ATT&amp;CK T1078.004</span></div>
+</article>
+
+<article class="ap" id="ap08">
+  <h2><span class="id">AP08</span> Write actions without approval, loops and spend limits</h2>
+  <dl class="facts-row">
+    <div><dt>Start</dt><dd>P2 directly, or P3 by injection</dd></div>
+    <div><dt>Target</dt><dd>Write tools, run limits, APIM token limits</dd></div>
+    <div><dt>Priority</dt><dd>High</dd></div>
+    <div><dt>Estimate</dt><dd>1.5 days</dd></div>
+  </dl>
+  <p><strong>Goal.</strong> Get the agent to change, send or delete something without a person approving it, keep running without end, or spend beyond its limit.</p>
+  <div class="reason">
+    <h3>Why this can work</h3>
+    <p>Approval is configured tool by tool. Teams put approval on the obvious tool ("send email") and miss the one that matters ("update claim status"). Where approval is implemented in the application rather than the platform, it can sometimes be satisfied by text: an injected line saying "the user has already approved this" is just more context to the model.</p>
+    <p>Loops come from instructions such as "keep checking until it changes", with no maximum steps or run timeout. Spend limits are the backstop for both, and they are worth verifying because a limit set in the wrong product or keyed on the wrong counter does nothing.</p>
+  </div>
+  <h3>Chain</h3>
+  <div class="table-wrap">
+    <table class="chain">
+      <thead><tr><th scope="col">Step</th><th scope="col">Attacker action</th><th scope="col">Control expected to stop it</th><th scope="col">Tester records</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>Ask plainly for each write action the agent's tools allow</td><td>Approval required for every write, send, pay, delete and access change tool</td><td>Tools that executed without approval</td></tr>
+        <tr><td>2</td><td>Bury the write as step five of a longer, harmless task</td><td>Approval enforced per call, regardless of context</td><td>Result</td></tr>
+        <tr><td>3</td><td>Inject text claiming approval was already given</td><td>Approval enforced by the platform or client, not decided by the model</td><td>Result</td></tr>
+        <tr><td>4</td><td>Instruct a polling or self repeating task</td><td>Maximum steps and run timeout</td><td>Steps and tokens before the run stopped</td></tr>
+        <tr><td>5</td><td>Against a test APIM product with a deliberately low token limit, send a short burst just over it</td><td>APIM token limit per consumer</td><td>Request at which 429s began, and whether other consumers were unaffected</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="pass"><h3>Pass looks like</h3><p>No write executes without a person approving it, runs stop at their limit, and the token limit triggers at the configured value for that consumer only.</p></div>
+  <div class="roe"><p><strong>Rules of engagement.</strong> Denial of service testing, including simulating it, is prohibited. Step 5 uses a lowered limit and a small burst against a test product, to show the limit is wired correctly. Nothing attempts to exhaust deployment capacity. Write actions run against test records only.</p></div>
+  <h3>Maps to</h3>
+  <div class="map"><span class="tag">I03</span><span class="tag">I04</span><span class="tag">E05</span><span class="tag">LLM06</span><span class="tag">LLM10</span><span class="tag">AML.T0034</span><span class="tag">ATT&amp;CK T1496</span><span class="tag">ATT&amp;CK T1565</span></div>
+</article>
+
+<article class="ap" id="ap09">
+  <h2><span class="id">AP09</span> Tool supply chain and request forgery from the agent subnet</h2>
+  <dl class="facts-row">
+    <div><dt>Start</dt><dd>P4 for tool registration, P3 for request forgery</dd></div>
+    <div><dt>Target</dt><dd>MCP servers, OpenAPI tools, internal endpoints</dd></div>
+    <div><dt>Priority</dt><dd>High</dd></div>
+    <div><dt>Estimate</dt><dd>2 days</dd></div>
+  </dl>
+  <p><strong>Goal.</strong> Introduce a malicious tool, alter a trusted one, or use a tool that fetches URLs to reach internal systems from inside the client's network.</p>
+  <div class="reason">
+    <h3>Why this can work</h3>
+    <p>In the reference design the agent runtime is injected into the client's own subnet, so its requests come from inside the VNet with a line of sight to private endpoints and, through ExpressRoute, possibly to on premises systems. Any tool that fetches a URL or host chosen by the model, such as a "read web page" MCP tool or an OpenAPI tool with a URL parameter, is a server side request forgery primitive whose source is the client's network.</p>
+    <p>MCP adds a supply chain angle. The model reads each tool's description to decide how to use it, so a description can carry instructions (tool poisoning), and a server can change its description or behaviour after it was reviewed. Allow listing by exact server URL and pinning the tool schema are the controls; both need verifying, not assuming.</p>
+  </div>
+  <h3>Chain</h3>
+  <div class="table-wrap">
+    <table class="chain">
+      <thead><tr><th scope="col">Step</th><th scope="col">Attacker action</th><th scope="col">Control expected to stop it</th><th scope="col">Tester records</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>List every tool that takes a URL, host, path or query as input</td><td>Tools take identifiers, not URLs</td><td>Candidate tools</td></tr>
+        <tr><td>2</td><td>Through such a tool, request private endpoint FQDNs, other spoke addresses, on premises hosts</td><td>Input validation in the tool; NSGs on the agent subnet; firewall rules from the agent subnet</td><td>Internal targets reached and their responses</td></tr>
+        <tr><td>3</td><td>In the development project, register a tester owned MCP server; after review, change its description to include instructions</td><td>Exact URL allow list; schema pinned and re-reviewed on change</td><td>Whether the changed description was accepted and acted on</td></tr>
+        <tr><td>4</td><td>Check whether a tool registered in development can be used by a production agent</td><td>Project separation; production agents deployed only by the pipeline</td><td>Result</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="pass"><h3>Pass looks like</h3><p>No tool reaches an internal address outside its purpose, a changed tool schema is rejected or flagged, and nothing registered in development reaches production.</p></div>
+  <div class="roe"><p><strong>Rules of engagement.</strong> The agent runtime is Microsoft managed. If a request from the runtime reaches a Microsoft internal service, such as an instance metadata endpoint of the platform, stop at proof of concept and report to MSRC. Enumeration, secret dumping or pivoting on Microsoft assets is prohibited.</p></div>
+  <h3>Maps to</h3>
+  <div class="map"><span class="tag">E08</span><span class="tag">I03</span><span class="tag">LLM03</span><span class="tag">LLM06</span><span class="tag">AML.T0053</span><span class="tag">AML.T0010</span><span class="tag">ATT&amp;CK T1195</span><span class="tag">ATT&amp;CK T1190</span></div>
+</article>
+
+<article class="ap" id="ap10">
+  <h2><span class="id">AP10</span> Egress bypass through allowed destinations</h2>
+  <dl class="facts-row">
+    <div><dt>Start</dt><dd>P3 by injection, or P4</dd></div>
+    <div><dt>Target</dt><dd>Firewall rules, DNS, code interpreter</dd></div>
+    <div><dt>Priority</dt><dd>High</dd></div>
+    <div><dt>Estimate</dt><dd>1 day, plus optional boundary testing</dd></div>
+  </dl>
+  <p><strong>Goal.</strong> Move canary data out of the agent environment through destinations the firewall already allows.</p>
+  <div class="reason">
+    <h3>Why this can work</h3>
+    <p>Agent subnets need to reach Entra ID and Azure services, and firewall rules for that are often written with wildcards such as <code>*.blob.core.windows.net</code> or broad service tags. Those match every storage account in Azure, including one the attacker created in their own subscription. "Private egress only to Azure" can still mean "egress to the attacker's Azure".</p>
+    <p>DNS is the other common gap. If the agent subnet can resolve arbitrary external names, data can leave encoded in subdomain lookups to a domain whose name server the attacker controls, even when no HTTP egress is allowed. Code interpreter runs in a Microsoft managed sandbox; whether it has outbound access in the client's configuration is worth checking rather than assuming.</p>
+  </div>
+  <h3>Chain</h3>
+  <div class="table-wrap">
+    <table class="chain">
+      <thead><tr><th scope="col">Step</th><th scope="col">Attacker action</th><th scope="col">Control expected to stop it</th><th scope="col">Tester records</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>Review firewall rules and service tags applied to the agent subnet</td><td>Exact FQDNs, no wildcards over shared cloud domains</td><td>Wildcards and broad tags</td></tr>
+        <tr><td>2</td><td>From the agent context, write a canary to a tester owned storage account on an allowed wildcard</td><td>Exact FQDN rules; private endpoints for the client's own accounts only</td><td>Whether the write succeeded</td></tr>
+        <tr><td>3</td><td>Trigger lookups of tester controlled subdomains carrying a canary</td><td>DNS filtering on the resolver or firewall DNS proxy</td><td>Queries received at the tester name server</td></tr>
+        <tr><td>4</td><td>From code interpreter, attempt DNS and HTTP to a tester endpoint</td><td>No outbound access from the sandbox</td><td>Result</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="pass"><h3>Pass looks like</h3><p>No canary reaches any tester owned destination by HTTP, storage write or DNS.</p></div>
+  <div class="roe"><p><strong>Rules of engagement.</strong> Attempting to break out of the code interpreter sandbox is permitted, but on success the tester stops immediately and reports to MSRC; no further action on Microsoft infrastructure. Agree in advance whether boundary testing is in scope, as it adds time without testing the client's own configuration.</p></div>
+  <h3>Maps to</h3>
+  <div class="map"><span class="tag">E03</span><span class="tag">I12</span><span class="tag">I13</span><span class="tag">LLM06</span><span class="tag">ATT&amp;CK T1567.002</span><span class="tag">ATT&amp;CK T1048</span><span class="tag">ATT&amp;CK T1071.004</span></div>
+</article>
+
+<article class="ap" id="ap11">
+  <h2><span class="id">AP11</span> Developer privilege escalation and guardrail tampering</h2>
+  <dl class="facts-row">
+    <div><dt>Start</dt><dd>P4, Foundry User on a development project</dd></div>
+    <div><dt>Target</dt><dd>Control plane, other projects, connection secrets</dd></div>
+    <div><dt>Priority</dt><dd>High</dd></div>
+    <div><dt>Estimate</dt><dd>2 days</dd></div>
+  </dl>
+  <p><strong>Goal.</strong> From an ordinary developer account, reach the control plane: create deployments, weaken content filters, read connection secrets, reach other projects, or switch on public access or keys.</p>
+  <div class="reason">
+    <h3>Why this can work</h3>
+    <p>Foundry's roles separate control plane from data plane well on paper, but organisations hand out Contributor or Foundry Owner to unblock a team and never take it back. One account with those rights can detach a filter policy from a deployment, which disables content safety for every app on it in a single change.</p>
+    <p>Connections are the subtler route. Connections created at the Foundry resource level can be shared across projects, and some connection types still hold secrets that an identity with the right action can list. Azure Policy is meant to be the backstop for public access and keys, so the test also confirms the policy is in Deny, at the right scope, without an exemption covering this resource.</p>
+  </div>
+  <h3>Chain</h3>
+  <div class="table-wrap">
+    <table class="chain">
+      <thead><tr><th scope="col">Step</th><th scope="col">Attacker action</th><th scope="col">Control expected to stop it</th><th scope="col">Tester records</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>Enumerate own role assignments and every resource visible through Resource Graph</td><td>Least privilege, project scoped assignments</td><td>Effective rights</td></tr>
+        <tr><td>2</td><td>Create a model deployment</td><td>Deployment write not in Foundry User</td><td>Result</td></tr>
+        <tr><td>3</td><td>Change or detach a filter policy</td><td>Filter policy writes restricted to the platform team</td><td>Result</td></tr>
+        <tr><td>4</td><td>List connections and try to retrieve their secrets</td><td>Entra ID connections; secret listing not granted</td><td>Any secret returned</td></tr>
+        <tr><td>5</td><td>Read agents, threads or files in another project</td><td>Project scoped role assignments</td><td>Result</td></tr>
+        <tr><td>6</td><td>Enable local auth or public network access</td><td>Policy Deny, no exemption</td><td>Result and the policy that denied it</td></tr>
+        <tr><td>7</td><td>Create a role assignment</td><td>No role assignment rights</td><td>Result</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="pass"><h3>Pass looks like</h3><p>Every step is denied, each denial appears in the Activity Log, and steps 3 and 6 raise alerts.</p></div>
+  <h3>Maps to</h3>
+  <div class="map"><span class="tag">I01</span><span class="tag">I05</span><span class="tag">I07</span><span class="tag">I11</span><span class="tag">I12</span><span class="tag">ATT&amp;CK T1098</span><span class="tag">ATT&amp;CK T1078.004</span><span class="tag">ATT&amp;CK T1580</span></div>
+</article>
+
+<article class="ap" id="ap12">
+  <h2><span class="id">AP12</span> Unapproved training and model deployment</h2>
+  <dl class="facts-row">
+    <div><dt>Start</dt><dd>P4</dd></div>
+    <div><dt>Target</dt><dd>Fine tuning, model policies, data collection</dd></div>
+    <div><dt>Priority</dt><dd>Medium</dd></div>
+    <div><dt>Estimate</dt><dd>1 day</dd></div>
+  </dl>
+  <p><strong>Goal.</strong> Fine tune a model on uploaded data, deploy it or another unapproved model, or switch on features that keep user data for later reuse.</p>
+  <div class="reason">
+    <h3>Why this can work</h3>
+    <p>Default data plane roles include fine tuning and dataset upload. Personal data trained into weights cannot be selectively removed, so this is a data protection failure even if no attacker is involved, which is why the priority is Medium: the harm is regulatory and slow rather than an immediate breach.</p>
+    <p>The approved models policy matches asset IDs by prefix. An entry without a trailing slash approves every model whose name starts the same way, and a publisher entry approves every future model from that publisher. Testing what the policy actually allows is the only way to know.</p>
+  </div>
+  <h3>Chain</h3>
+  <div class="table-wrap">
+    <table class="chain">
+      <thead><tr><th scope="col">Step</th><th scope="col">Attacker action</th><th scope="col">Control expected to stop it</th><th scope="col">Tester records</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>Upload a small training file and start a fine tuning job</td><td>Builder role without fine tuning actions; training only in the approved project</td><td>Result</td></tr>
+        <tr><td>2</td><td>Deploy a fine tuned model outside the training scope</td><td>Custom deny on fine tuned deployments</td><td>Result</td></tr>
+        <tr><td>3</td><td>Deploy a model not on the list, and one whose name extends an approved name</td><td>Approved models policy with exact asset IDs</td><td>Which deployments the policy allowed</td></tr>
+        <tr><td>4</td><td>Deploy a preview model, and use the Developer deployment type</td><td>Eligibility policy; Developer type denied outside training</td><td>Result</td></tr>
+        <tr><td>5</td><td>Enable stored completions or agent memory</td><td>Off unless approved</td><td>Result</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="pass"><h3>Pass looks like</h3><p>Every step is denied by role or policy, with the policy named in the denial, and each attempt is visible to the SOC.</p></div>
+  <div class="roe"><p><strong>Cost.</strong> Fine tuning jobs and deployments cost money. Agree a cost cap and the smallest job size, and delete every artefact afterwards.</p></div>
+  <h3>Maps to</h3>
+  <div class="map"><span class="tag">I01</span><span class="tag">I02</span><span class="tag">LLM03</span><span class="tag">LLM04</span><span class="tag">AML.T0010</span><span class="tag">AML.T0020</span></div>
+</article>
+
+<article class="ap" id="ap13">
+  <h2><span class="id">AP13</span> Pipeline identity abuse</h2>
+  <dl class="facts-row">
+    <div><dt>Start</dt><dd>P5, repository write access</dd></div>
+    <div><dt>Target</dt><dd>Federated credentials, self hosted runner, infrastructure</dd></div>
+    <div><dt>Priority</dt><dd>High</dd></div>
+    <div><dt>Estimate</dt><dd>1.5 days</dd></div>
+  </dl>
+  <p><strong>Goal.</strong> Use the pipeline's identity to change infrastructure without review, for example to switch off a guardrail or open network access.</p>
+  <div class="reason">
+    <h3>Why this can work</h3>
+    <p>The pipeline usually holds the highest standing rights in the estate, because it deploys everything. Workload identity federation removes the secret but moves the risk into the federated credential's subject: a subject that matches any branch, any pull request or any environment lets code that never passed review obtain a token.</p>
+    <p>The self hosted runner inside the spoke is both a privileged identity holder and a network foothold. If it is not ephemeral, tokens and files from earlier runs can remain on disk. If the repository is public and the runner accepts jobs from forks, an outsider can run code inside the client's network.</p>
+  </div>
+  <h3>Chain</h3>
+  <div class="table-wrap">
+    <table class="chain">
+      <thead><tr><th scope="col">Step</th><th scope="col">Attacker action</th><th scope="col">Control expected to stop it</th><th scope="col">Tester records</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>Review federated credential subjects and the roles of the pipeline identity</td><td>Subjects bound to a protected branch and environment; least privilege</td><td>Subjects and rights</td></tr>
+        <tr><td>2</td><td>Push a workflow to an unprotected branch that requests a token</td><td>Subject does not match the branch</td><td>Whether a token was issued</td></tr>
+        <tr><td>3</td><td>If the repository is public, open a pull request from a fork targeting the self hosted runner</td><td>Fork jobs never run on self hosted runners</td><td>Result</td></tr>
+        <tr><td>4</td><td>With any token obtained, attempt a guardrail weakening change</td><td>Environment approval; Azure Policy Deny as the backstop</td><td>Result</td></tr>
+        <tr><td>5</td><td>Inspect the runner for leftover tokens and files</td><td>Ephemeral runners</td><td>Findings</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="pass"><h3>Pass looks like</h3><p>Only reviewed code on a protected branch and approved environment gets a token, and policy denies guardrail weakening even when it does.</p></div>
+  <div class="roe"><p><strong>Rules of engagement.</strong> Prefer a sandbox copy of the repository and subscription. If the real pipeline is used, agree a rollback plan and a change window.</p></div>
+  <h3>Maps to</h3>
+  <div class="map"><span class="tag">I01</span><span class="tag">I07</span><span class="tag">I12</span><span class="tag">E11</span><span class="tag">ATT&amp;CK T1199</span><span class="tag">ATT&amp;CK T1528</span><span class="tag">ATT&amp;CK T1195.002</span></div>
+</article>
+
+<article class="ap" id="ap14">
+  <h2><span class="id">AP14</span> Network foothold to private endpoints</h2>
+  <dl class="facts-row">
+    <div><dt>Start</dt><dd>P6, a host in another network location</dd></div>
+    <div><dt>Target</dt><dd>Private endpoints, DNS</dd></div>
+    <div><dt>Priority</dt><dd>Medium</dd></div>
+    <div><dt>Estimate</dt><dd>1.5 days</dd></div>
+  </dl>
+  <p><strong>Goal.</strong> From a compromised host elsewhere, reach Foundry and its stores, and establish what an attacker with network reach can do.</p>
+  <div class="reason">
+    <h3>Why this can work</h3>
+    <p>A private endpoint is reachable from anything routed to its subnet: peered spokes, on premises over ExpressRoute, and other clouds over the interconnect. NSGs on a private endpoint subnet only take effect when network policies are enabled on it, which is off by default on older subnets. Private often means "reachable from the whole corporate network".</p>
+    <p>Entra ID still applies, which is why the priority is Medium: reach alone is not access. The finding that matters is reach combined with any valid token, for example a compromised user who holds Foundry User for an unrelated project.</p>
+  </div>
+  <h3>Chain</h3>
+  <div class="table-wrap">
+    <table class="chain">
+      <thead><tr><th scope="col">Step</th><th scope="col">Attacker action</th><th scope="col">Control expected to stop it</th><th scope="col">Tester records</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>From each foothold, resolve and connect to each private endpoint</td><td>Firewall and NSGs limit sources to approved subnets</td><td>Reachability matrix</td></tr>
+        <tr><td>2</td><td>Call each endpoint with the foothold user's token</td><td>RBAC</td><td>Result</td></tr>
+        <tr><td>3</td><td>Check whether the foothold can be made to resolve a public address for a private name</td><td>Public access disabled, so a wrong resolution fails closed</td><td>Result</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="pass"><h3>Pass looks like</h3><p>Only approved sources reach the private endpoints, and no foothold identity gets data.</p></div>
+  <h3>Maps to</h3>
+  <div class="map"><span class="tag">E14</span><span class="tag">I12</span><span class="tag">ATT&amp;CK T1046</span><span class="tag">ATT&amp;CK T1557</span></div>
+</article>
+
+<article class="ap" id="ap15">
+  <h2><span class="id">AP15</span> Detection and response validation</h2>
+  <dl class="facts-row">
+    <div><dt>Start</dt><dd>Runs alongside every other path</dd></div>
+    <div><dt>Target</dt><dd>Logs, alerts, SOC process, kill switch</dd></div>
+    <div><dt>Priority</dt><dd>High</dd></div>
+    <div><dt>Estimate</dt><dd>2 days</dd></div>
+  </dl>
+  <p><strong>Goal.</strong> For every other test, establish whether it was recorded, whether an alert fired, and how long the response took. Then rehearse the agent kill switch.</p>
+  <div class="reason">
+    <h3>Why this matters</h3>
+    <p>A control that blocks silently looks exactly like a control that never ran, and a detection rule that has never fired may not work. Running detection checks alongside the attack paths, as a purple team exercise, turns the test into evidence: each blocked attempt shows up as a log line, each successful one as an alert, and any gap between them is a finding.</p>
+    <p>Logging itself is a target. An attacker who deletes a diagnostic setting blinds every rule that depends on it, and the only rule that catches that is one that looks for absence.</p>
+  </div>
+  <h3>Chain</h3>
+  <div class="table-wrap">
+    <table class="chain">
+      <thead><tr><th scope="col">Step</th><th scope="col">Action</th><th scope="col">Control under test</th><th scope="col">Tester records</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>Agree a detection matrix: for each path, which log and which alert should show it</td><td>Not applicable</td><td>Matrix</td></tr>
+        <tr><td>2</td><td>Record the time of each test action</td><td>Logs and alerts</td><td>Time to log, time to alert, time to triage</td></tr>
+        <tr><td>3</td><td>On a test agent, run the kill switch steps in order</td><td>Kill switch runbook</td><td>Time for each step to take effect</td></tr>
+        <tr><td>4</td><td>With approval, delete the diagnostic setting on a test resource</td><td>Delete alert and absence rule</td><td>Whether and when each fired</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="pass"><h3>Pass looks like</h3><p>Every test action appears in the logs with an identity, the agreed alerts fire within the agreed time, the kill switch stops the test agent within 15 minutes, and the absence rule fires when logs stop.</p></div>
+  <h3>Maps to</h3>
+  <div class="map"><span class="tag">I04</span><span class="tag">I08</span><span class="tag">ATT&amp;CK T1562.008</span></div>
+</article>
+
+</div>
+
+<section id="out">
+  <div class="wrap">
+    <h2>Out of scope, and why</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th scope="col">Excluded</th><th scope="col">Reason</th></tr></thead>
+        <tbody>
+          <tr><td>Microsoft's model hosting, Agent Service infrastructure and the Prompt Shields models as a product</td><td>Microsoft's assets, not the client's. Boundary tests stop at proof of concept and go to MSRC.</td></tr>
+          <tr><td>Load, stress or capacity exhaustion of model deployments</td><td>Denial of service testing in any form is prohibited. Limits are verified at low volume instead (AP08).</td></tr>
+          <tr><td>Any tenant, subscription or resource the client does not own</td><td>Prohibited, and a legal risk for the tester.</td></tr>
+          <tr><td>Use of real leaked credentials</td><td>Only credentials the client owns and plants for the test may be used.</td></tr>
+          <tr><td>Poisoning a production model through training data</td><td>Irreversible for the client. AP12 tests whether training can start without approval, which is the control that matters.</td></tr>
+          <tr><td>Social engineering of Microsoft staff</td><td>Prohibited. Social engineering of client staff needs its own scope if wanted.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section id="inputs">
+  <div class="wrap">
+    <h2>What to ask the client before quoting</h2>
+    <p class="lead">Effort depends far more on the number of agents, tools and grounding sources than on the size of the Azure estate. These answers set the quote.</p>
+    <ol class="checks">
+      <li>An agent inventory: each agent, its model deployment, its tools, its grounding sources, and who can write to each source.</li>
+      <li>The architecture as built: network diagram, firewall rules for the agent subnet, private endpoint list, APIM configuration.</li>
+      <li>Role assignments for the AI subscriptions, and the federated credential subjects of the deployment pipeline.</li>
+      <li>Which starting positions are in scope, and the test accounts for each (two end users in different groups as a minimum).</li>
+      <li>A canary data set: seeded records and documents the tester may try to move, with distinct access lists.</li>
+      <li>Tester owned endpoints for listeners, storage and DNS, agreed in writing.</li>
+      <li>Acceptable attack success rates for AI tests, per harm category, agreed before testing.</li>
+      <li>Whether the SOC is told (purple team) or not (detection blind test), and the emergency contacts on both sides.</li>
+      <li>A cost cap for tokens, fine tuning and any deployments the tests create.</li>
+      <li>The test window, any change freeze, and agreement on reporting any Microsoft platform issue to MSRC.</li>
+    </ol>
+  </div>
+</section>
+
+<section id="effort">
+  <div class="wrap">
+    <h2>Effort and reporting</h2>
+    <p class="lead">For one Foundry resource, one production project and up to three agents, the paths above total 24 tester days, and 31 with setup, reporting and a retest. These are planning estimates for an experienced cloud and AI tester, not a quote; several paths can run in parallel.</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th scope="col">Item</th><th scope="col">Days</th><th scope="col">Scales with</th></tr></thead>
+        <tbody>
+          <tr><td>Scoping and setup: accounts, canaries, listeners, detection matrix</td><td>2</td><td>Number of starting positions</td></tr>
+          <tr><td>Platform paths: AP01, AP02, AP11, AP12, AP13, AP14</td><td>8</td><td>Number of Foundry resources and subscriptions</td></tr>
+          <tr><td>Agent paths: AP03 to AP10</td><td>14</td><td>Number of agents and writable read surfaces; add about 0.5 day per extra agent for AP04</td></tr>
+          <tr><td>Detection and response: AP15</td><td>2</td><td>Whether the SOC is involved live</td></tr>
+          <tr><td>Reporting</td><td>3</td><td>Number of findings</td></tr>
+          <tr><td>Retest after fixes</td><td>2</td><td>Number of findings</td></tr>
+          <tr><td><strong>Total</strong></td><td><strong>31</strong></td><td></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <h3>What the report should contain</h3>
+    <ul class="checks">
+      <li>Each finding mapped to its attack path, threat ID, STRIDE category and the control that failed, so remediation lands on the right owner.</li>
+      <li>For each agent, how many defensive layers remained when a path partly succeeded. One layer left is a different risk from four.</li>
+      <li>Attack success rates for AI tests, per category and per deployment, against the agreed threshold.</li>
+      <li>The detection matrix as observed: logged, alerted, triaged, with times.</li>
+      <li>Kill switch timings from AP15.</li>
+      <li>Any issue reported to MSRC, listed without detail until Microsoft confirms a fix.</li>
+    </ul>
+    <p class="small muted">Sources: <a href="https://learn.microsoft.com/en-us/azure/security/fundamentals/pen-testing">Microsoft Learn, Penetration testing</a>; <a href="https://www.microsoft.com/msrc/pentest-rules-of-engagement">Microsoft Cloud Unified Penetration Testing Rules of Engagement</a>; <a href="https://learn.microsoft.com/en-us/azure/foundry/agents/how-to/virtual-networks">Set up private networking for Foundry Agent Service</a>; <a href="https://learn.microsoft.com/en-us/azure/foundry/how-to/model-deployment-policy">Built-in policies for model deployment</a>. OWASP codes refer to the OWASP Top 10 for LLM Applications 2025; AML codes to MITRE ATLAS; T codes to MITRE ATT&amp;CK.</p>
+  </div>
+</section>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <p>Part of the <a href="index.html">Foundry Field Guide</a> by <a href="https://saleemyousaf.co.uk">Saleem Yousaf</a>. Independent and not endorsed by Microsoft. No cookies, analytics or tracking.</p>
+  </div>
+</footer>
+</body>
+</html>

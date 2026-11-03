@@ -1,0 +1,389 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- The policy is a meta tag so it applies on any host. It only works because
+     no markup uses inline style attributes or inline event handlers; keep it that way. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<title>Foundry Field Guide: deploy Microsoft Foundry securely</title>
+<meta name="description" content="A vendor neutral, hands on guide to deploying Microsoft Foundry (formerly Azure AI Foundry): architecture, landing zones, step by step deployment, threat model, guardrails, rogue agent and training controls.">
+<meta name="author" content="Saleem Yousaf">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Foundry Field Guide">
+<meta property="og:description" content="Deploy Microsoft Foundry so one failed control is not a breach. Trace threats through the guardrails, follow the deployment step by step.">
+<meta name="keywords" content="Microsoft Foundry, Azure AI Foundry, AI security, AI agent security, prompt injection, threat modelling, penetration testing, guardrails, landing zone, Zero Trust">
+<link rel="canonical" href="https://saleemyousaf.co.uk/foundry/">
+<meta property="og:url" content="https://saleemyousaf.co.uk/foundry/">
+<meta property="og:image" content="https://saleemyousaf.co.uk/foundry/og-foundry.png">
+<meta property="og:image:width" content="2400">
+<meta property="og:image:height" content="1260">
+<meta property="og:site_name" content="Saleem Yousaf">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Foundry Field Guide">
+<meta name="twitter:description" content="Deploy Microsoft Foundry so one failed control is not a breach. Trace threats through the guardrails, follow the deployment step by step, and explore fifteen attack paths.">
+<meta name="twitter:image" content="https://saleemyousaf.co.uk/foundry/og-foundry.png">
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"TechArticle","headline":"Foundry Field Guide: deploy Microsoft Foundry securely","description":"Deploy Microsoft Foundry so one failed control is not a breach. Trace threats through the guardrails, follow the deployment step by step, and explore fifteen attack paths.","image":"https://saleemyousaf.co.uk/foundry/og-foundry.png","datePublished":"2026-11-03","author":{"@type":"Person","name":"Saleem Yousaf","url":"https://saleemyousaf.co.uk","sameAs":["https://www.linkedin.com/in/saleemyousaf","https://github.com/saleem-yousaf","https://cyberspartans.co.uk"]},"publisher":{"@type":"Person","name":"Saleem Yousaf","url":"https://saleemyousaf.co.uk"},"mainEntityOfPage":{"@type":"WebPage","@id":"https://saleemyousaf.co.uk/foundry/"}}
+</script>
+<meta name="theme-color" content="#0E1116">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="preload" href="fonts/ibm-plex-sans-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="style.css">
+<script src="app.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="#main"><img src="favicon.svg" alt="" width="26" height="26"><span>Foundry Field Guide</span></a>
+    <nav class="nav" aria-label="Sections">
+      <a href="#overview">Overview</a>
+      <a href="#explorer">Explorer</a>
+      <a href="#landing">Landing zones</a>
+      <a href="#deploy">Deploy</a>
+      <a href="#threats">Threats</a>
+      <a href="#guardrails">Guardrails</a>
+      <a href="#agents">Rogue agents</a>
+      <a href="#training">Training</a>
+      <a href="#operate">Operate</a>
+      <a href="#checklist">Checklist</a>
+      <a href="attack-paths.html">Attack paths</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+
+<div class="hero">
+  <div class="wrap">
+    <h1>Deploy Microsoft Foundry so one failed control is not a breach</h1>
+    <p class="lead">A working guide for platform and security teams. Trace an attack through the guardrails, switch a control off to see what still holds, then follow the deployment one checked step at a time.</p>
+    <div class="actions">
+      <a class="btn primary" href="#explorer">Trace a threat</a>
+      <a class="btn" href="#deploy">Start the deployment</a>
+    </div>
+  </div>
+</div>
+
+<section id="overview">
+  <div class="wrap">
+    <h2>What Foundry is</h2>
+    <p class="lead">Microsoft Foundry, formerly Azure AI Foundry and before that Azure AI Studio, is Azure's platform for building, deploying and governing generative AI applications and agents.</p>
+    <p>One top level Foundry resource holds the governance: networking, encryption, model deployments and policy. Child projects hold the development work: agents, threads, files and evaluations. Storage, Key Vault, AI Search and Cosmos DB are connected resources with their own network and access boundaries, so locking down Foundry does nothing for them. Leaving one of them public while Foundry is private is the most common gap in reviews.</p>
+    <p>Build new estates on the Foundry resource model. Hub based projects are legacy and new features land on the Foundry resource first.</p>
+
+    <div class="table-wrap">
+      <table>
+        <caption class="sr">Foundry resource model</caption>
+        <thead><tr><th scope="col">Resource</th><th scope="col">ARM type</th><th scope="col">Holds</th></tr></thead>
+        <tbody>
+          <tr><td>Foundry resource</td><td><code>Microsoft.CognitiveServices/accounts</code>, kind <code>AIServices</code></td><td>Model deployments, network rules, customer managed key, connections, guardrail policies</td></tr>
+          <tr><td>Foundry project</td><td><code>Microsoft.CognitiveServices/accounts/projects</code></td><td>Agents, threads, files, evaluations, project managed identity</td></tr>
+          <tr><td>Connected resources</td><td>Storage, Key Vault, AI Search, Cosmos DB, App Insights</td><td>Separate resources with their own network and RBAC boundaries</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="two">
+      <div>
+        <h3>Who it is for</h3>
+        <p>Platform engineers own the resource, network and quotas. Security architects and the SOC own guardrails, policy and detection. Developers build agents inside a project. Data owners decide what agents may read and where it is processed. Risk and audit need evidence against ISO 27001, ISO 42001, NIST AI RMF and the EU AI Act.</p>
+      </div>
+      <div>
+        <h3>The problem it answers</h3>
+        <p>Without a governed platform each team stands up its own Azure OpenAI account, its own keys and its own vector store, and security finds out afterwards. Foundry gives many teams one place to build while one platform team keeps control of networking, identity, data residency, model choice and spend.</p>
+      </div>
+    </div>
+
+    <div class="facts">
+      <div class="fact"><h3>Sanctioned, not shadow</h3><p>A private internal endpoint with logging gives staff an approved alternative to pasting data into public chatbots.</p></div>
+      <div class="fact"><h3>No keys in config</h3><p>Local auth disabled; Entra ID and managed identities only, so every call is attributable.</p></div>
+      <div class="fact"><h3>Known models only</h3><p>Azure Policy allow lists decide which models can be deployed, at deployment time.</p></div>
+      <div class="fact"><h3>Injection screened</h3><p>Prompt Shields inspect user input, documents and tool responses before the model acts on them.</p></div>
+      <div class="fact"><h3>Data stays put</h3><p>Regional or Data Zone deployments, and threads, files and vectors in your own stores.</p></div>
+      <div class="fact"><h3>Evidence for audit</h3><p>Traces, evaluations and Defender alerts in Log Analytics and Sentinel.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="explorer">
+  <div class="wrap">
+    <h2>Trace a threat through the guardrails</h2>
+    <p class="lead">Choose an attack, switch off any control, then trace it. The result tells you where the attack stopped, which gaps it passed through, and whether anything recorded it.</p>
+    <p>Scoping a penetration test of these paths? <a href="attack-paths.html">Read the attack paths with reasoning, test cases and effort</a>.</p>
+
+    <div class="tabs" role="group" aria-label="Attack to trace" id="scenario-tabs"></div>
+    <p id="scenario-summary" class="muted"></p>
+
+    <div class="explorer">
+      <div class="board">
+        <div class="lanes" id="flow-board"></div>
+        <div class="trace-row">
+          <button class="btn primary" type="button" id="trace">Trace this attack</button>
+          <button class="btn" type="button" id="reset">Switch all controls back on</button>
+        </div>
+        <div class="key" aria-hidden="true">
+          <span><i class="sw flow"></i>On the attack path</span>
+          <span><i class="sw ok"></i>Held</span>
+          <span><i class="sw gap"></i>Switched off or bypassed</span>
+          <span><i class="sw tele"></i>Telemetry</span>
+        </div>
+      </div>
+      <aside class="notes" aria-labelledby="notes-title">
+        <h3 id="notes-title">Select a control</h3>
+        <div id="notes-body"><p class="muted">Each box on the left is a control on the request path. Select one to read what it does, how to configure it, and which threats it answers.</p></div>
+        <div id="trace-result" aria-live="polite"></div>
+      </aside>
+    </div>
+  </div>
+</section>
+
+<section id="landing">
+  <div class="wrap">
+    <h2>Landing zones, hybrid and multi-cloud</h2>
+    <p class="lead">Foundry lives in an application landing zone and inherits networking, DNS, identity and policy from the Azure landing zone instead of bringing its own.</p>
+    <div class="tabs" role="tablist" aria-label="Environment" id="env-tabs"></div>
+    <div class="explorer">
+      <div class="board" id="env-board"></div>
+      <aside class="notes" aria-labelledby="env-notes-title">
+        <h3 id="env-notes-title">Select a component</h3>
+        <div id="env-notes-body"><p class="muted">Select a component to see what it does here and what breaks if it is missing.</p></div>
+        <div id="env-result" aria-live="polite"></div>
+      </aside>
+    </div>
+
+    <h3>Shared platform or one Foundry per application</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th scope="col">Pattern</th><th scope="col">Use when</th><th scope="col">Trade off</th></tr></thead>
+        <tbody>
+          <tr><td>Central AI platform: one Foundry per environment and region, a project per use case</td><td>Many small use cases and a strong central team</td><td>Shared quota, one blast radius for a misconfiguration</td></tr>
+          <tr><td>Foundry per application landing zone</td><td>Regulated or high risk use cases, distinct data classifications</td><td>More resources to govern, model deployments duplicated</td></tr>
+          <tr><td>Both, behind one APIM gateway (recommended)</td><td>Most enterprises</td><td>Needs written criteria for which use case goes where</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>A workable rule: personal data, financial decisions or agents that can write get a dedicated Foundry resource; internal knowledge assistants on Official data share the central one.</p>
+  </div>
+</section>
+
+<section id="deploy">
+  <div class="wrap">
+    <h2>Step by step deployment</h2>
+    <p class="lead">You hold the pen. Each phase gives the commands, what you should see, and a check that fails loudly if the phase is wrong. Do not start the next phase until the check passes.</p>
+    <p>Order matters. Policy goes first so nothing is born non compliant. The network goes in before Foundry because agent subnet injection cannot be added afterwards for hosted agents. The data stores go in before the project because the agent capability host binds to them when the project is created.</p>
+    <p id="deploy-progress" class="progress" aria-live="polite"></p>
+    <div class="deploy">
+      <ol class="phases" id="phase-list" aria-label="Deployment phases"></ol>
+      <div class="phase-body" id="phase-body" tabindex="-1"></div>
+    </div>
+  </div>
+</section>
+
+<section id="threats">
+  <div class="wrap">
+    <h2>Threat library</h2>
+    <p class="lead">The threats that matter most are not the model being hacked. They are an agent steered by content it reads, an identity holding more access than its task needs, and people deploying or training models outside approval.</p>
+    <div class="filters">
+      <div class="tabs" role="group" aria-label="Threat source" id="threat-filter"></div>
+      <label class="sr" for="threat-search">Search threats</label>
+      <input class="search" id="threat-search" type="search" placeholder="Search, for example injection or LLM06" autocomplete="off">
+      <span class="count" id="threat-count" aria-live="polite"></span>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th scope="col">ID</th><th scope="col">Threat</th><th scope="col">Primary controls</th><th scope="col">Detection</th><th scope="col">OWASP, ATLAS</th></tr></thead>
+        <tbody id="threat-rows"></tbody>
+      </table>
+    </div>
+
+    <h3>STRIDE by component</h3>
+    <p>Each component of the architecture mapped against Spoofing, Tampering, Repudiation, Information disclosure, Denial of service and Elevation of privilege, with the threat IDs above so both views stay traceable.</p>
+    <label class="sr" for="stride-component">Component</label>
+    <select class="search" id="stride-component"></select>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th scope="col">STRIDE</th><th scope="col">Threat</th><th scope="col">Control</th><th scope="col">Threat IDs</th></tr></thead>
+        <tbody id="stride-rows"></tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section id="guardrails">
+  <div class="wrap">
+    <h2>Guardrails in layers</h2>
+    <p class="lead">Policy stops bad configuration at creation, identity limits who can act, the network limits where traffic goes, content safety inspects what enters and leaves the model, and monitoring catches what the others miss. Every layer is required.</p>
+    <div class="layers">
+      <div class="layer"><h3>Identity</h3><ul>
+        <li>Entra ID only: <code>disableLocalAuth</code> on Foundry, AI Search and Cosmos DB, <code>allowSharedKeyAccess: false</code> on Storage.</li>
+        <li>Foundry User for builders, Foundry Project Manager for leads, Foundry Account Owner for the platform team only, all through PIM with approval.</li>
+        <li>Conditional Access on the portal and APIs: phishing resistant MFA, compliant device, sign in risk.</li>
+        <li>Managed identities and workload identity federation for automation; no client secrets.</li>
+        <li>A dedicated Entra agent identity for every published agent, with Conditional Access for agents applied at the blueprint.</li>
+      </ul></div>
+      <div class="layer"><h3>Network</h3><ul>
+        <li>Public network access disabled on Foundry and every connected resource, with no IP exceptions in production.</li>
+        <li>Agent compute injected into a delegated subnet, one subnet per Foundry resource.</li>
+        <li>Default route to the hub firewall with an FQDN allow list; all other outbound denied.</li>
+        <li>APIM in internal mode as the only way in for applications.</li>
+      </ul></div>
+      <div class="layer"><h3>Data</h3><ul>
+        <li>Standard agent setup, bringing your own Cosmos DB, Storage and AI Search, for anything personal or confidential.</li>
+        <li>One project per data classification; customer managed keys where classification requires them.</li>
+        <li>Security trimming in AI Search so retrieval never returns what the user could not open.</li>
+        <li>Regional deployments for UK only processing, Data Zone for an EU or US boundary, Global only where the DPIA allows it.</li>
+      </ul></div>
+      <div class="layer"><h3>Model and content</h3><ul>
+        <li>Prompt Shields blocking on user input, documents and tool responses.</li>
+        <li>Harm filters on input and output, protected material on output, groundedness for retrieval answers.</li>
+        <li>Guardrails on tool calls and tool responses for agents that use tools.</li>
+        <li>No secrets in system prompts; structured outputs validated against a schema; maximum tokens on every call.</li>
+      </ul></div>
+      <div class="layer"><h3>Policy</h3><ul>
+        <li><em>Foundry model deployments should only use approved models</em> and <em>should meet eligibility requirements</em>, set to Deny.</li>
+        <li>Deny public network access and local authentication on all five resource types.</li>
+        <li>DeployIfNotExists diagnostic settings to the central workspace.</li>
+        <li>A custom policy denying AI Services accounts outside the AI subscriptions, which stops shadow accounts.</li>
+      </ul></div>
+      <div class="layer"><h3>Evaluation and monitoring</h3><ul>
+        <li>Quality and safety evaluations in CI on every agent or prompt change; a regression fails the release.</li>
+        <li>The AI Red Teaming Agent before go live and every quarter.</li>
+        <li>Defender for Cloud AI threat protection, Purview DSPM for AI, Sentinel analytics rules.</li>
+      </ul></div>
+    </div>
+  </div>
+</section>
+
+<section id="agents">
+  <div class="wrap">
+    <h2>Preventing rogue agents</h2>
+    <p class="lead">A rogue agent is any agent acting outside the purpose it was approved for: misled by injected content, built with more power than it needed, left running after its owner left, or created without approval.</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th scope="col">Control</th><th scope="col">Means</th><th scope="col">How in Foundry</th></tr></thead>
+        <tbody>
+          <tr><td>Known</td><td>No agent exists outside the inventory</td><td>Production agents created only by the pipeline; the Foundry control plane and Entra Agent ID registry reconciled weekly with the approved register</td></tr>
+          <tr><td>Owned</td><td>Every agent has a named owner and an expiry date</td><td>Owner and expiry in agent metadata; access review of agent identities every 90 days; the leaver process disables owned agents</td></tr>
+          <tr><td>Narrowly empowered</td><td>The agent can do only its task</td><td>Dedicated agent identity, RBAC on exactly the indexes and APIs it needs, read only tools by default</td></tr>
+          <tr><td>Bounded</td><td>Every run has hard limits</td><td>Token and step limits per run, a run timeout, a daily token budget at APIM, guardrails on tool calls and responses</td></tr>
+          <tr><td>Watched</td><td>Every tool call is traced</td><td>OpenTelemetry spans with agent ID, thread ID and tool name; Sentinel rules on unusual tool use</td></tr>
+          <tr><td>Stoppable</td><td>Any agent stops in under 15 minutes</td><td>The kill switch below, rehearsed every quarter</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="two">
+      <div>
+        <h3>Build rules</h3>
+        <ul>
+          <li>Agent definitions, instructions and tool lists live in the repository and reach production only through the pipeline.</li>
+          <li>Tools are allow listed by exact MCP server URL or OpenAPI spec version; a schema change needs a new review.</li>
+          <li>Approval is required before any tool that writes, sends, pays, deletes or changes access.</li>
+          <li>No agent identity holds a role that can create agents, assign roles, or grant Graph permissions such as <code>Application.ReadWrite.All</code>.</li>
+          <li>Code interpreter stays off unless the agent charter needs it.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Kill switch, least disruptive first</h3>
+        <ol class="kill">
+          <li><strong>Block the calling app at APIM.</strong> Stops new user traffic straight away.</li>
+          <li><strong>Disable the agent identity.</strong> The agent can no longer get tokens for tools or data.</li>
+          <li><strong>Remove its data role assignments.</strong> Cuts access at the next token refresh.</li>
+          <li><strong>Revoke the tool connection.</strong> Tool calls fail.</li>
+          <li><strong>Roll back the agent version.</strong> Removes faulty instructions or tools.</li>
+          <li><strong>Set deployment capacity to zero.</strong> Last resort: stops every app on that deployment.</li>
+          <li><strong>Preserve evidence.</strong> Export threads and traces and place a hold on the logs.</li>
+        </ol>
+        <p class="muted small">Issued tokens stay valid until they expire, often up to an hour. That is why step one and egress filtering matter: they stop the effect while revocation catches up.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="training">
+  <div class="wrap">
+    <h2>Preventing unapproved model training</h2>
+    <p class="lead">Two questions need answers. Does the provider train on your data? That is contractual. Can your own people fine tune or give a model persistent memory without approval? By default, yes, so you have to build the control.</p>
+    <p>Microsoft's published position for models sold directly by Azure is that prompts, completions and fine tuning data are not used to train the foundation models. Confirm it for your contract in the Product Terms and Data Protection Addendum, because partner and open models in Foundry can carry their own terms, and record the result in the DPIA.</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th scope="col">Route to learning</th><th scope="col">Risk</th><th scope="col">Control</th></tr></thead>
+        <tbody>
+          <tr><td>Fine tuning</td><td>Personal data embedded in weights cannot be selectively erased</td><td>Custom builder role without fine tuning actions; training only in one approved project through PIM</td></tr>
+          <tr><td>Fine tuned deployment outside the training scope</td><td>Unassessed model in production</td><td>Custom policy denying deployments whose model name contains <code>.ft-</code>, excluding only the training project</td></tr>
+          <tr><td>Developer deployment type</td><td>No residency guarantee, no SLA</td><td>Deny outside the training subscription</td></tr>
+          <tr><td>Stored completions reused as training data</td><td>Customer data repurposed without a lawful basis</td><td>No <code>store: true</code> in production unless the DPIA covers it</td></tr>
+          <tr><td>Agent memory across sessions</td><td>Profiling and retention beyond purpose</td><td>Off by default; enabled per agent with purpose, retention and user notice</td></tr>
+          <tr><td>Training on Azure ML compute or GPU VMs</td><td>Bypasses every Foundry policy</td><td>Deny ML compute and GPU SKUs outside the training subscription</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>List the exact fine tuning action names in your tenant before writing the custom role, rather than trusting a guide:</p>
+    <div class="code"><pre><code>az provider operation show --namespace Microsoft.CognitiveServices \
+  --query "resourceTypes[].operations[?contains(name,'fine') || contains(name,'files')].name" -o tsv</code></pre></div>
+    <p>Remember that <code>notDataActions</code> subtracts from one role only; it is not a deny. The person must hold no other role that grants the same action.</p>
+  </div>
+</section>
+
+<section id="operate">
+  <div class="wrap">
+    <h2>Operate and detect</h2>
+    <p class="lead">An estate stays secure only if someone looks at it on a schedule. Column names in diagnostic tables vary by resource and API version, so run <code>getschema</code> once and make each rule fail on a test event before you trust it to stay quiet.</p>
+    <div id="kql"></div>
+    <h3>Review cadence</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th scope="col">When</th><th scope="col">Activity</th><th scope="col">Owner</th></tr></thead>
+        <tbody>
+          <tr><td>Daily</td><td>Triage Defender for AI and Sentinel incidents</td><td>SOC</td></tr>
+          <tr><td>Weekly</td><td>Reconcile the agent inventory with the approved register</td><td>Platform team</td></tr>
+          <tr><td>Weekly</td><td>Token spend per project and per APIM consumer</td><td>FinOps</td></tr>
+          <tr><td>Monthly</td><td>Policy compliance for the AI management group</td><td>Platform team</td></tr>
+          <tr><td>Monthly</td><td>Content filter block rates and false positives</td><td>Service owners</td></tr>
+          <tr><td>Quarterly</td><td>Access review of human roles and agent identities</td><td>Identity team</td></tr>
+          <tr><td>Quarterly</td><td>Red team evaluation of each production agent; kill switch tabletop</td><td>Security, SOC</td></tr>
+          <tr><td>On retirement notice</td><td>Evaluate the replacement model, update the allow list, re-run evaluations</td><td>Platform, service owners</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section id="checklist">
+  <div class="wrap">
+    <h2>Take the checklist with you</h2>
+    <p class="lead">Choose the parts you need and download them as a plain text file. It is built in your browser; nothing is sent anywhere.</p>
+    <fieldset class="choose" id="checklist-parts"><legend class="sr">Checklist parts</legend></fieldset>
+    <button class="btn primary" type="button" id="download">Download checklist</button>
+    <p id="download-status" class="muted small" aria-live="polite"></p>
+  </div>
+</section>
+
+<section id="about" class="tight">
+  <div class="wrap">
+    <h2>About this guide</h2>
+    <p>Written by Saleem Yousaf, cloud and cyber security architect and director of <a href="https://cyberspartans.co.uk">Cyber Spartans Ltd</a>. It is independent and not endorsed by Microsoft. Foundry changes quickly and several features described here are in preview; check API versions, role names and policy display names against Microsoft Learn before a production change.</p>
+    <p>Sources, checked October 2026:</p>
+    <ul>
+      <li><a href="https://learn.microsoft.com/en-us/azure/foundry/concepts/architecture">Microsoft Foundry architecture</a></li>
+      <li><a href="https://learn.microsoft.com/en-us/azure/foundry/agents/how-to/virtual-networks">Set up private networking for Foundry Agent Service</a></li>
+      <li><a href="https://learn.microsoft.com/en-us/azure/foundry/how-to/model-deployment-policy">Built-in policies for model deployment</a></li>
+      <li><a href="https://learn.microsoft.com/en-us/azure/foundry/agents/concepts/agent-identity">Agent identity concepts in Microsoft Foundry</a></li>
+      <li><a href="https://learn.microsoft.com/en-us/entra/id-governance/agent-id-governance-overview">Microsoft Entra Agent ID governance</a></li>
+      <li><a href="https://learn.microsoft.com/azure/ai-foundry/openai/how-to/role-based-access-control">Role based access control for Azure OpenAI</a></li>
+    </ul>
+  </div>
+</section>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <p>Foundry Field Guide by <a href="https://saleemyousaf.co.uk">Saleem Yousaf</a>. No cookies, analytics or tracking. Microsoft, Azure and Foundry are trademarks of Microsoft Corporation.</p>
+  </div>
+</footer>
+</body>
+</html>
